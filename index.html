@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Проскочим — график разводки мостов в Петербурге</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 16px;
+            transition: background-color 0.3s, color 0.3s;
+            background: #EFEFF3; /* Цвет фона для светлой темы */
+        }
+        .container {
+            max-width: 390px;
+            margin: 0 auto;
+        }
+        .news-card, .bridge-card {
+            background: var(--tg-theme-section-bg-color, #FFFFFF);
+            border-radius: 16px;
+            padding: 12px 16px;
+            width: calc(100% - 32px);
+        }
+        .news-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .news-icon {
+            width: 24px;
+            height: 24px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .news-text {
+            flex: 1 0 0;
+            font-size: 16px;
+            margin: 0;
+        }
+        .bridge-card {
+            display: flex;
+            padding: 12px 16px;
+            align-items: center;
+            gap: 12px; 
+            align-self: stretch;
+            margin-bottom: 12px;
+        }
+        .bridge-illustration {
+            width: 64px;
+            height: 64px;
+            margin-right: 1px;
+        }
+        .bridge-info {
+            flex-grow: 1;
+        }
+        .bridge-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 16px;
+            font-weight: 700;
+            margin: 0 0 4px 0;
+        }
+        .bridge-time {
+            font-size: 14px;
+            color: #8E8E92;
+            margin: 0 0 8px 0;
+        }
+        .bridge-countdown-wrapper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .bridge-countdown {
+            font-size: 14px;
+            font-weight: 600;
+            margin: 0;
+        }
+        .bridge-status {
+            padding: 3px 8px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .status-raised {
+            background: rgba(194, 39, 42, 0.12);
+            color: #C2272A;
+        }
+        .status-lowered {
+            background: rgba(39, 194, 129, 0.12);
+            color: #27C281;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="newsBlock" class="news-card">
+            <img src="media/bell.png" alt="Notification" class="news-icon">
+            <p class="news-text"></p>
+        </div>
+
+        <div id="bridgeGrid"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const tg = window.Telegram.WebApp;
+            tg.expand();
+
+            const theme = tg.themeParams;
+            document.body.style.backgroundColor = theme.secondary_bg_color || '#EFEFF3'; 
+            document.body.style.color = theme.text_color || '#000';
+
+            tg.onEvent('themeChanged', () => {
+                const theme = tg.themeParams;
+                document.body.style.backgroundColor = theme.secondary_bg_color || '#EFEFF3';
+                document.body.style.color = theme.text_color || '#000';
+            });
+
+            const newsBlock = document.querySelector('#newsBlock .news-text');
+            const bridgeGrid = document.getElementById('bridgeGrid');
+
+            function fetchData() {
+                fetch('https://mostotrest-spb.ru')
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+
+                        let newsElement = doc.querySelector('.item_today .text');
+                        if (newsElement) {
+                            newsBlock.textContent = newsElement.textContent.trim();
+                        }
+
+                        const bridgeElements = doc.querySelectorAll('select option');
+                        const bridgeData = Array.from(bridgeElements).map(bridge => {
+                            const bridgeId = bridge.getAttribute('data-bridge-id');
+                            const statusElement = doc.querySelector(`.item[id="${bridgeId}"] .value`);
+                            const statusInfo = bridge.getAttribute('data-info');
+                            
+                            let status;
+                            if (statusElement && statusElement.textContent.includes("Навигация завершена")) {
+                                status = "Навигация завершена";
+                            } else {
+                                status = getBridgeStatus(statusInfo);
+                            }
+                            
+                            return {
+                                name: formatBridgeName(bridge.textContent.trim()),
+                                status: status,
+                                schedule: formatSchedule(bridge.getAttribute('data-times')),
+                                timeUntilOpening: bridge.getAttribute('data-timer')
+                            };
+                        });
+                        displayBridgeData(bridgeData);
+                    })
+                    .catch(error => {
+                        console.error('Error fetching data:', error);
+                        tg.showAlert('Ошибка при загрузке данных. Попробуйте снова.');
+                    });
+            }
+
+            function getBridgeStatus(statusInfo) {
+                if (statusInfo.includes("Сегодня мост не разводится")) return "Сегодня не разводится";
+                if (statusInfo.includes("Навигация завершена")) return "Навигация завершена";
+                if (statusInfo.includes("Наведен")) return "Наведён";
+                return "Разведён";
+            }
+
+            function formatBridgeName(name) {
+                if (name.toLowerCase() === 'александра невского') {
+                    return 'Мост А. Невского';
+                }
+                if (name.toLowerCase().includes('мост')) {
+                    return name;
+                }
+                return `${name} мост`;
+            }
+
+            function formatSchedule(schedule) {
+                return schedule.replace(/\|/g, ' | ');
+            }
+
+            function displayBridgeData(bridgeData) {
+                bridgeGrid.innerHTML = '';
+                
+                bridgeData.forEach((bridge, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'bridge-card';
+
+                    const isNotOperating = bridge.status === "Сегодня не разводится" || bridge.status === "Навигация завершена";
+
+                    card.innerHTML = `
+                        <img src="${getBridgeImageName(bridge.name)}" alt="${bridge.name}" class="bridge-illustration">
+                        <div class="bridge-info">
+                            <h2 class="bridge-name">${bridge.name}</h2>
+                            <p class="bridge-time">${bridge.schedule}</p>
+                            <div class="bridge-countdown-wrapper">
+                                ${isNotOperating 
+                                    ? `<p class="bridge-countdown">${bridge.status}</p>` 
+                                    : `<p class="bridge-countdown"></p><span class="bridge-status ${bridge.status === "Разведён" ? 'status-raised' : 'status-lowered'}">${bridge.status}</span>`
+                                }
+                            </div>
+                        </div>
+                    `;
+
+                    bridgeGrid.appendChild(card);
+
+                    if (!isNotOperating) {
+                        const countdownElement = card.querySelector('.bridge-countdown');
+                        const openingTime = new Date(parseInt(bridge.timeUntilOpening) * 1000);
+                        setInterval(() => {
+                            const now = new Date();
+                            const timeDiff = openingTime - now;
+
+                            const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+                            const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+                            const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
+
+                            countdownElement.textContent = `Осталось: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                        }, 1000);
+                    }
+                });
+            }
+
+            function getBridgeImageName(bridgeName) {
+                switch (bridgeName) {
+                    case 'Мост А. Невского':
+                        return 'media/a-nevsky.svg';
+                    case 'Биржевой мост':
+                        return 'media/birzhevoy.svg';
+                    case 'Благовещенский мост':
+                        return 'media/blagoveshchensky.svg';
+                    case 'Большеохтинский мост':
+                        return 'media/bolsheokhtinsky.svg';
+                    case 'Володарский мост':
+                        return 'media/volodarsky.svg';
+                    case 'Дворцовый мост':
+                        return 'media/dvorcovy.svg';
+                    case 'Литейный мост':
+                        return 'media/liteyny.svg';
+                    case 'Троицкий мост':
+                        return 'media/troitsky.svg';
+                    case 'Тучков мост':
+                        return 'media/tuchkov.svg';
+                    case 'Гренадерский мост':
+                        return 'media/grenadersky.svg';
+                    case 'Сампсониевский мост':
+                        return 'media/sampsonievsky.svg';
+                    default:
+                        return 'bridge.svg';
+                }
+            }
+
+            fetchData();
+            setInterval(fetchData, 5 * 60 * 1000); // Обновление данных каждые 5 минут
+        });
+    </script>
+</body>
+</html>
