@@ -275,20 +275,6 @@
         });
     </script>
 
-    <script>
-        function initAnalytics() {
-          if (window.ENV && window.telegramAnalytics) {
-            window.telegramAnalytics.init({
-              token: window.ENV.ANALYTICS_TOKEN,
-              appName: window.ENV.ANALYTICS_APP_NAME,
-            });
-            console.log("Analytics initialized successfully");
-          } else {
-            console.error("Failed to initialize analytics: missing ENV or telegramAnalytics");
-          }
-        }
-    </script>
-
     
 </body>
 </html>
